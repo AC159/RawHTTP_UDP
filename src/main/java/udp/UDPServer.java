@@ -1,4 +1,4 @@
-package udp.server;
+package udp;
 
 public class UDPServer {
 
