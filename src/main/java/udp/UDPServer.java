@@ -14,6 +14,8 @@ import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
+
 public class UDPServer {
     public static boolean verbose = false;
     public static String directoryPath = System.getProperty("user.dir"); // get current working directory
@@ -264,6 +266,7 @@ public class UDPServer {
             System.exit(0);
         }
 
+        List<String> data = new ArrayList<>();
         ByteBuffer buffer = ByteBuffer.allocate(Packet.MAX_LEN).order(ByteOrder.BIG_ENDIAN);
         try {
             while (true) {
@@ -274,8 +277,19 @@ public class UDPServer {
                 // Parse a packet from the received raw data.
                 buffer.flip();
                 Packet packet = Packet.fromBuffer(buffer);
+                String payload = new String(packet.getPayload(), UTF_8);
+                data.add(payload);
                 System.out.println(packet);
                 buffer.flip();
+
+                if (payload.endsWith("\r\n")) {
+                    System.out.println("END OF PACKET!");
+                }
+
+                // send back an ack packet with no payload
+                Packet ack = new Packet(1, packet.getSequenceNumber(), packet.getPeerAddress(), packet.getPeerPort(), new byte[]{});
+                channel.send(ack.toBufferArray(), new InetSocketAddress(packet.getPeerAddress(), packet.getPeerPort()));
+
 //                HashMap<String, String> headers = receiveRequest();
 //                sendResponse(sm, headers);
             }
