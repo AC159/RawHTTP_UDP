@@ -56,7 +56,7 @@ public class UDPClient {
 
     public static void main(String[] args) {
 
-        if (args.length == 0) {
+        if (args.length == 0 || args[0].equalsIgnoreCase("help")) {
             httpcHelp("");
             System.exit(0);
         }
