@@ -219,7 +219,7 @@ public class UDPClient {
         int payloadEndRange = 1013;
         List<Packet> packetsToSend = new ArrayList<>();
 
-        // Make udp packets from this sequence of bytes
+        // Make udp datagrams from this sequence of bytes
         long sequenceNumber = 1;
         int nbrOfPackets = (int) Math.ceil((float) payloadLength / Packet.MAX_LEN);
         for (int i = 0; i < nbrOfPackets; i++) {

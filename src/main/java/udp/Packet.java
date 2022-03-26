@@ -49,7 +49,7 @@ public class Packet {
         byte[] host = new byte[]{buffer.get(), buffer.get(), buffer.get(), buffer.get()}; // read 4 bytes to get the peer IP address bytes
         InetAddress peerAddress = Inet4Address.getByAddress(host);
 
-        int peerPort = buffer.get() + buffer.get();
+        int peerPort = Short.toUnsignedInt(buffer.getShort());
         byte[] payload = new byte[buffer.remaining()];
         buffer.get(payload);
 

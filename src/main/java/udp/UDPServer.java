@@ -158,7 +158,7 @@ public class UDPServer {
         return response;
     }
 
-//    public static HashMap<String, String> receiveRequest(ServerSocketManager ssm) throws NoSuchElementException, IOException {
+//    public static HashMap<String, String> receiveRequest() throws NoSuchElementException, IOException {
 //        // this hashmap will contain all the extracted request headers
 //        HashMap<String, String> headers = new HashMap<>();
 //
@@ -198,7 +198,7 @@ public class UDPServer {
 //        }
 //        return headers;
 //    }
-//
+
 //    public static void sendResponse(ServerSocketManager ssm, HashMap<String, String> headers) {
 //        StringBuilder response = new StringBuilder();
 //
@@ -267,6 +267,8 @@ public class UDPServer {
         ByteBuffer buffer = ByteBuffer.allocate(Packet.MAX_LEN).order(ByteOrder.BIG_ENDIAN);
         try {
             while (true) {
+
+                buffer.clear();
                 channel.receive(buffer);
 
                 // Parse a packet from the received raw data.
