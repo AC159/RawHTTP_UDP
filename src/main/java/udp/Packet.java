@@ -58,7 +58,7 @@ public class Packet {
 
     @Override
     public String toString() {
-        return String.format("#%d peer=%s:%d, size=%d", sequenceNumber, peerAddress, peerPort, payload.length);
+        return String.format("Datagram #%d peer=%s:%d, size=%d", sequenceNumber, peerAddress, peerPort, payload.length);
     }
 
 }
