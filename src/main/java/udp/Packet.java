@@ -26,6 +26,22 @@ public class Packet {
         this.payload = payload;
     }
 
+    public byte[] getPayload() {
+        return this.payload;
+    }
+
+    public long getSequenceNumber() {
+        return this.sequenceNumber;
+    }
+
+    public InetAddress getPeerAddress() {
+        return this.peerAddress;
+    }
+
+    public int getPeerPort() {
+        return this.peerPort;
+    }
+
     public ByteBuffer toBufferArray() {
         ByteBuffer buffer = ByteBuffer.allocate(MAX_LEN).order(ByteOrder.BIG_ENDIAN);
         buffer.put((byte) type);
