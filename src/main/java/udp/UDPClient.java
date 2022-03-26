@@ -207,6 +207,7 @@ public class UDPClient {
 
         System.out.println("\nPerforming query: \n");
         System.out.println(query);
+        System.out.println("Sending packet of length: " + query.length());
 
         // Convert router & server hostnames and ports into Inet addresses
         InetSocketAddress serverAddress = new InetSocketAddress(serverHost, serverPort);
@@ -224,7 +225,7 @@ public class UDPClient {
         int nbrOfPackets = (int) Math.ceil((float) payloadLength / Packet.MAX_LEN);
         for (int i = 0; i < nbrOfPackets; i++) {
             Packet p = new Packet(0, sequenceNumber, serverAddress.getAddress(), serverAddress.getPort(),
-                    Arrays.copyOfRange(bytes, payloadStartRange, payloadEndRange));
+                    Arrays.copyOfRange(bytes, payloadStartRange, Math.min(payloadLength, payloadEndRange)));
             packetsToSend.add(p);
             sequenceNumber++;
             payloadStartRange = payloadEndRange;
