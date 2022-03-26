@@ -1,6 +1,7 @@
 package udp;
 
 import org.apache.commons.cli.*;
+import org.ietf.jgss.GSSName;
 import org.json.JSONObject;
 
 import java.io.*;
@@ -56,7 +57,9 @@ public class UDPClient {
 
     public static void main(String[] args) {
 
-        if (args.length == 0 || args[0].equalsIgnoreCase("help")) {
+        if (args.length == 0 || args[0].equalsIgnoreCase("help") || (!args[0].equalsIgnoreCase("get") &&
+                !args[0].equalsIgnoreCase("post"))) {
+            System.out.println("Missing either GET or POST option...");
             httpcHelp("");
             System.exit(0);
         }
@@ -66,10 +69,10 @@ public class UDPClient {
         options.addOption("h", true, "key:value \t Associates headers to HTTP Request with the format 'key:value'.");
         options.addOption("d", true, "string \t Associates an inline data to the body HTTP POST request.");
         options.addOption("f", true, "file \t Associates the content of a file to the body HTTP POST request.");
-        options.addOption("--router-port", true, "router port \t Specify the port on which the router is running.");
-        options.addOption("--router-host", true, "router hostname \t Specify the hostname (IP address or localhost) of the router.");
-        options.addOption("--server-port", true, "server port \t Specify the port on which the server is running.");
-        options.addOption("--server-host", true, "server hostname \t Specify the hostname (IP address or localhost) of the server.");
+        options.addOption(null, "router-port", true, "router port \t Specify the port on which the router is running.");
+        options.addOption(null, "router-host", true, "router hostname \t Specify the hostname (IP address or localhost) of the router.");
+        options.addOption(null, "server-port", true, "server port \t Specify the port on which the server is running.");
+        options.addOption(null, "server-host", true, "server hostname \t Specify the hostname (IP address or localhost) of the server.");
 
         CommandLineParser parser = new DefaultParser();
         CommandLine cmd = null;
@@ -78,6 +81,7 @@ public class UDPClient {
             cmd = parser.parse(options, args);
         } catch (ParseException e) {
             System.out.println("Could not parse command line arguments...");
+            System.out.println(e.getMessage());
             System.exit(1);
         }
 

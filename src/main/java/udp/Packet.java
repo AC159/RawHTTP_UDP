@@ -1,5 +1,7 @@
 package udp;
 
+import java.io.IOException;
+import java.net.Inet4Address;
 import java.net.InetAddress;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -27,11 +29,31 @@ public class Packet {
     public ByteBuffer toBufferArray() {
         ByteBuffer buffer = ByteBuffer.allocate(MAX_LEN).order(ByteOrder.BIG_ENDIAN);
         buffer.put((byte) type);
-        buffer.put((byte) sequenceNumber);
+        buffer.putInt((int) sequenceNumber);
         buffer.put(peerAddress.getAddress());
+        buffer.putShort((short) peerPort);
         buffer.put(payload);
         buffer.flip(); // stop put operations and get ready for get operations
         return buffer;
+    }
+
+    public static Packet fromBuffer(ByteBuffer buffer) throws IOException {
+
+        if (buffer.limit() < MIN_LEN || buffer.limit() > MAX_LEN) {
+            throw new IOException("Invalid length");
+        }
+
+        int type = buffer.get();
+        long sequenceNum = buffer.getInt(); // read 4 bytes to get the sequence number
+
+        byte[] host = new byte[]{buffer.get(), buffer.get(), buffer.get(), buffer.get()}; // read 4 bytes to get the peer IP address bytes
+        InetAddress peerAddress = Inet4Address.getByAddress(host);
+
+        int peerPort = buffer.get() + buffer.get();
+        byte[] payload = new byte[buffer.remaining()];
+        buffer.get(payload);
+
+        return new Packet(type, sequenceNum, peerAddress, peerPort, payload);
     }
 
     @Override
