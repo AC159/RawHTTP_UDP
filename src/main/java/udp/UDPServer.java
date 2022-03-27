@@ -160,46 +160,60 @@ public class UDPServer {
         return response;
     }
 
-//    public static HashMap<String, String> receiveRequest() throws NoSuchElementException, IOException {
-//        // this hashmap will contain all the extracted request headers
-//        HashMap<String, String> headers = new HashMap<>();
-//
-//        StringBuilder request = new StringBuilder();
-//        String answer = ssm.inputStream.readLine();
-//
-//        // From the request-line we can extract the method, version and uri of the http request\
-//        String[] requestLineTokens = answer.split(" ");
-//        headers.put("httpMethod", requestLineTokens[0]);
-//        headers.put("httpUri", requestLineTokens[1].replace("http://", "")
-//                .replace("https://", "").replaceAll("^(.*?)(/|$)", ""));
-//        headers.put("httpVersion", requestLineTokens[2].split("/")[1]);
-//
-//        while (answer.length() > 0) {
-//            request.append("\n").append(answer);
-//            answer = ssm.inputStream.readLine();
-//            String[] header = answer.split(":");
-//            if (header.length > 1) headers.put(header[0].trim().toLowerCase(), header[1].trim());
-//        }
-//
-//        if (headers.get("httpMethod").equalsIgnoreCase("post") && headers.get("content-length") != null) {
-//            int contentLength = Integer.parseInt(headers.get("content-length"));
-//            StringBuilder postRequestBody = new StringBuilder();
-//
-//            if (verbose) System.out.println("Parsing request body with content-length of " + contentLength);
-//
-//            for (int i = 0; i <= contentLength-1; i++) {
-//                answer = String.valueOf((char) ssm.inputStream.read());
-//                postRequestBody.append(answer);
+    public static HashMap<String, String> receiveRequest(List<String> httpMessage) throws NoSuchElementException, IOException {
+        // this hashmap will contain all the extracted request headers
+        HashMap<String, String> headers = new HashMap<>();
+
+        String httpRequest = String.join("", httpMessage);
+        if (verbose) System.out.println("HTTP request: \n" + httpRequest);
+
+        // extract the headers of the http message
+        String[] tokens = httpRequest.split("\r\n");
+        System.out.println("Tokens: \n" + Arrays.toString(tokens));
+
+        // From the request-line we can extract the method, version and uri of the http request
+        String[] requestLineTokens = tokens[0].split(" ");
+        headers.put("httpMethod", requestLineTokens[0]);
+        headers.put("httpUri", requestLineTokens[1].replace("http://", "")
+                .replace("https://", "").replaceAll("^(.*?)(/|$)", ""));
+        headers.put("httpVersion", requestLineTokens[2].split("/")[1]);
+
+        int startOfRequestBodyIndex = -1;
+        for (int i = 1; i < tokens.length; i++) {
+            if (tokens[i].isEmpty() || tokens[i].isBlank()) {
+                // At this point, the subsequent portion of the tokens is the request body
+                startOfRequestBodyIndex = i + 1;
+            } else {
+                String[] header = tokens[i].split(":");
+                if (header.length > 1) headers.put(header[0].trim().toLowerCase(), header[1].trim());
+            }
+        }
+
+        if (headers.get("httpMethod").equalsIgnoreCase("post") && headers.get("content-length") != null && startOfRequestBodyIndex != -1) {
+            int contentLength = Integer.parseInt(headers.get("content-length"));
+            StringBuilder postRequestBody = new StringBuilder();
+
+            if (verbose) System.out.println("Parsing request body with content-length of " + contentLength);
+
+            postRequestBody.append(tokens[tokens.length-1]);
+//            int bytesRead = 0;
+//            String s;
+//            while(bytesRead < contentLength) {
+//                s = tokens[startOfRequestBodyIndex];
+//                postRequestBody.append(s);
+//                startOfRequestBodyIndex++;
+//                bytesRead += s.length();
 //            }
-//            headers.put("requestBody", String.valueOf(postRequestBody));
-//        }
-//
-//        if (verbose) {
-//            System.out.println("\nRaw http request: " + request);
-//            System.out.println("\nParsed request headers: " + headers);
-//        }
-//        return headers;
-//    }
+//            System.out.println("Bytes read: " + bytesRead);
+            headers.put("requestBody", String.valueOf(postRequestBody));
+        }
+
+        if (verbose) {
+            System.out.println("\nRaw http request: " + httpRequest);
+            System.out.println("\nParsed request headers: " + headers);
+        }
+        return headers;
+    }
 
 //    public static void sendResponse(ServerSocketManager ssm, HashMap<String, String> headers) {
 //        StringBuilder response = new StringBuilder();
@@ -266,8 +280,9 @@ public class UDPServer {
             System.exit(0);
         }
 
-        List<String> data = new ArrayList<>();
+        List<String> httpMessage = new ArrayList<>();
         ByteBuffer buffer = ByteBuffer.allocate(Packet.MAX_LEN).order(ByteOrder.BIG_ENDIAN);
+        HashMap<String, String> headers;
         try {
             while (true) {
 
@@ -278,12 +293,14 @@ public class UDPServer {
                 buffer.flip();
                 Packet packet = Packet.fromBuffer(buffer);
                 String payload = new String(packet.getPayload(), UTF_8);
-                data.add(payload);
+                httpMessage.add(payload);
                 System.out.println(packet);
                 buffer.flip();
 
                 if (payload.endsWith("\r\n")) {
                     System.out.println("END OF PACKET!");
+                    System.out.println("Data: " + httpMessage);
+                    headers = receiveRequest(httpMessage);
                 }
 
                 // send back an ack packet with no payload
