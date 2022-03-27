@@ -4,7 +4,6 @@ import java.io.IOException;
 import java.net.Inet4Address;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
-import java.net.SocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.ArrayList;
@@ -102,7 +101,13 @@ public class Packet {
 
     @Override
     public String toString() {
-        return String.format("Datagram #%d peer=%s:%d, size=%d", sequenceNumber, peerAddress, peerPort, payload.length);
+        String packetType = "";
+        if (type == 0) packetType = "DATA";
+        else if (type == 1) packetType = "ACK";
+        else if (type == 2) packetType = "SYN";
+        else if (type == 3) packetType = "SYN-ACK";
+        else if (type == 4) packetType = "NACK";
+        return String.format("Datagram #%d type=%d (%s) peer=%s:%d, size=%d", sequenceNumber, type, packetType, peerAddress, peerPort, payload.length);
     }
 
 }
