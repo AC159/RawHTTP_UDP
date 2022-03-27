@@ -340,8 +340,8 @@ public class UDPServer {
                             System.exit(0);
                         }
                     }
+                    httpMessage.clear();
                 }
-
                 // send back an ack packet with no payload
                 Packet ack = new Packet(1, packet.getSequenceNumber(), packet.getPeerAddress(), packet.getPeerPort(), new byte[]{});
                 channel.send(ack.toBufferArray(), new InetSocketAddress(peerAddress, peerPort));
