@@ -34,6 +34,6 @@
 ### Start the client
 
     GET request:
-    java -cp target/UDP_RawHttp-1.0-SNAPSHOT-jar-with-dependencies.jar udp.UDPClient get --router-host localhost --router-port 3000 --server-host localhost --server-port 8007
+    java -cp target/UDP_RawHttp-1.0-SNAPSHOT-jar-with-dependencies.jar udp.UDPClient get --router-host localhost --router-port 3000 --server-host localhost --server-port 8007 http://127.0.0.1
     POST file to the UDP server:
-    java -cp target/UDP_RawHttp-1.0-SNAPSHOT-jar-with-dependencies.jar udp.UDPClient post --router-host localhost --router-port 3000 --server-host localhost --server-port 8007 -f <path to file>
+    java -cp target/UDP_RawHttp-1.0-SNAPSHOT-jar-with-dependencies.jar udp.UDPClient post --router-host localhost --router-port 3000 --server-host localhost --server-port 8007 -f <path to file> http://127.0.0.1/newFile.txt
