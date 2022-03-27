@@ -5,13 +5,14 @@ import org.json.JSONObject;
 
 import java.io.*;
 import java.net.*;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.nio.channels.DatagramChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.List;
+import java.util.*;
+
+import static java.nio.charset.StandardCharsets.UTF_8;
 
 public class UDPClient {
 
@@ -212,25 +213,7 @@ public class UDPClient {
         InetSocketAddress serverAddress = new InetSocketAddress(serverHost, serverPort);
         SocketAddress routerAddress = new InetSocketAddress(routerHost, routerPort);
 
-        // convert the http packet into a sequence of bytes
-        byte[] bytes = query.toString().getBytes();
-        int payloadLength = bytes.length;
-        int payloadStartRange = 0;
-        int payloadEndRange = 1013;
-        List<Packet> packetsToSend = new ArrayList<>();
-
-        // Make udp datagrams from this sequence of bytes
-        long sequenceNumber = 1;
-        int nbrOfPackets = (int) Math.ceil((float) payloadLength / Packet.MAX_LEN);
-        for (int i = 0; i < nbrOfPackets; i++) {
-            Packet p = new Packet(0, sequenceNumber, serverAddress.getAddress(), serverAddress.getPort(),
-                    Arrays.copyOfRange(bytes, payloadStartRange, Math.min(payloadLength, payloadEndRange)));
-            packetsToSend.add(p);
-            sequenceNumber++;
-            payloadStartRange = payloadEndRange;
-            payloadEndRange = payloadEndRange + 1013;
-            if (payloadEndRange > payloadLength) payloadEndRange = payloadLength;
-        }
+        List<Packet> packetsToSend = Packet.splitMessageIntoPackets(query, serverAddress);
 
         // todo: perform a 3-way handshake with the server
         DatagramChannel channel = null;
@@ -250,31 +233,51 @@ public class UDPClient {
             }
         }
 
-//        String response;
-//        BufferedReader reader = new BufferedReader(new InputStreamReader(sm.inputStream));
-//        HashMap<String, String> responseHeaders = new HashMap<>();
-//        // parse response headers
-//        StringBuilder request = new StringBuilder();
-//        String answer = reader.readLine();
-//
-//        while (answer.length() > 0) {
-//            request.append("\n").append(answer);
-//            answer = reader.readLine();
-//            String[] header = answer.split(":");
-//            if (header.length > 1) responseHeaders.put(header[0].trim().toLowerCase(), header[1].trim());
-//        }
-//
-//        StringBuilder responseBody = new StringBuilder();
-//        for (int i = 0; i <= Integer.parseInt(responseHeaders.get("content-length"))-1; i++) {
-//            answer = String.valueOf((char) reader.read());
-//            responseBody.append(answer);
-//        }
-//
-//        System.out.println(responseBody);
-//
-//        reader.close();
-//        sm.closeSocket();
-//    }
+        List<String> httpMessage = new ArrayList<>();
+        ByteBuffer buffer = ByteBuffer.allocate(Packet.MAX_LEN).order(ByteOrder.BIG_ENDIAN);
+//        HashMap<String, String> responseHeaders;
+        System.out.println("Receiving response from server: ");
+        try {
+            while (true) {
+
+                buffer.clear();
+                channel.receive(buffer);
+
+                // Parse a packet from the received raw data.
+                buffer.flip();
+                Packet packet = Packet.fromBuffer(buffer);
+                String payload = new String(packet.getPayload(), UTF_8);
+//                InetAddress peerAddress = packet.getPeerAddress();
+//                int peerPort = packet.getPeerPort();
+                httpMessage.add(payload);
+                System.out.println(packet);
+                buffer.flip();
+
+                if (payload.endsWith("\r\n")) {
+                    System.out.println("END OF PACKET!");
+                    System.out.println("Data: " + httpMessage);
+                    break;
+//                    headers = receiveRequest(httpMessage);
+//                    StringBuilder responseToSend = sendResponse(headers);
+//                    List<Packet> packetsToSend = Packet.splitMessageIntoPackets(responseToSend, new InetSocketAddress(peerAddress, peerPort));
+//                    for (Packet p: packetsToSend) {
+//                        try {
+//                            channel.send(p.toBufferArray(), routerAddress);
+//                        } catch (IOException exception) {
+//                            System.out.println("Error sending datagram packet to socket...");
+//                            System.out.println(exception.getMessage());
+//                            System.exit(0);
+//                        }
+//                    }
+                }
+
+                // send back an ack packet with no payload
+//                Packet ack = new Packet(1, packet.getSequenceNumber(), packet.getPeerAddress(), packet.getPeerPort(), new byte[]{});
+//                channel.send(ack.toBufferArray(), new InetSocketAddress(peerAddress, peerPort));
+            }
+        } catch (NoSuchElementException | IOException e) {
+            System.out.println(e.getMessage());
+        }
 
     }
 }

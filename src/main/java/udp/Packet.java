@@ -3,8 +3,13 @@ package udp;
 import java.io.IOException;
 import java.net.Inet4Address;
 import java.net.InetAddress;
+import java.net.InetSocketAddress;
+import java.net.SocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 
 // Packet represents a simulated network datagram packet
 public class Packet {
@@ -70,6 +75,29 @@ public class Packet {
         buffer.get(payload);
 
         return new Packet(type, sequenceNum, peerAddress, peerPort, payload);
+    }
+
+    public static List<Packet> splitMessageIntoPackets(StringBuilder httpMessage, InetSocketAddress serverAddress) {
+        // convert the http packet into a sequence of bytes
+        byte[] bytes = httpMessage.toString().getBytes();
+        int payloadLength = bytes.length;
+        int payloadStartRange = 0;
+        int payloadEndRange = 1013;
+        List<Packet> packetsToSend = new ArrayList<>();
+
+        // Make udp datagrams from this sequence of bytes
+        long sequenceNumber = 1;
+        int nbrOfPackets = (int) Math.ceil((float) payloadLength / Packet.MAX_LEN);
+        for (int i = 0; i < nbrOfPackets; i++) {
+            Packet p = new Packet(0, sequenceNumber, serverAddress.getAddress(), serverAddress.getPort(),
+                    Arrays.copyOfRange(bytes, payloadStartRange, Math.min(payloadLength, payloadEndRange)));
+            packetsToSend.add(p);
+            sequenceNumber++;
+            payloadStartRange = payloadEndRange;
+            payloadEndRange = payloadEndRange + 1013;
+            if (payloadEndRange > payloadLength) payloadEndRange = payloadLength;
+        }
+        return packetsToSend;
     }
 
     @Override

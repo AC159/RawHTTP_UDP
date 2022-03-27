@@ -29,7 +29,7 @@
 
 ### Start the server
 
-    java -cp target/UDP_RawHttp-1.0-SNAPSHOT-jar-with-dependencies.jar udp.UDPServer -p 8007 -v
+    java -cp target/UDP_RawHttp-1.0-SNAPSHOT-jar-with-dependencies.jar udp.UDPServer -p 8007 -v --router-host localhost --router-port 3000
     
 ### Start the client
 

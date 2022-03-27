@@ -3,7 +3,9 @@ package udp;
 import org.apache.commons.cli.*;
 
 import java.io.*;
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.net.SocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.channels.DatagramChannel;
@@ -29,6 +31,8 @@ public class UDPServer {
                 "-d \tSpecifies the directory that the server will use to read/write\n" +
                 "\trequested files. Default is the current directory when\n" +
                 "\tlaunching the application.\n" +
+                "\t--router-port router port \t Specify the port on which the router is running.\n" +
+                "\t--router-host router hostname \t Specify the hostname (IP address or localhost) of the router.\n" +
                 "help \tPrints this help message");
     }
 
@@ -91,16 +95,16 @@ public class UDPServer {
                 }
             }
         } catch (IOException e) {
-            response = createHttpError(404, "Not Found", "File not found on the server\n");
+            response = createHttpError(404, "Not Found", "File not found on the server\r\n");
         }
 
         if (!body.isEmpty()) {
             response.append("HTTP/1.0 200 OK\n");
             response.append("Content-Type: text/html\n");
             response.append("Content-Length: ").append(body.length()).append("\n\n");
-            response.append(body).append("\n");
+            response.append(body).append("\r\n");
         } else {
-            response = createHttpError(404, "Not Found", "File not found on the server\n");
+            response = createHttpError(404, "Not Found", "File not found on the server\r\n");
         }
         return response;
     }
@@ -109,7 +113,7 @@ public class UDPServer {
         StringBuilder response = new StringBuilder();
 
         if (headers.get("content-length") == null) {
-            response = createHttpError(400, "Bad Request", "Missing Content-Length header\n");
+            response = createHttpError(400, "Bad Request", "Missing Content-Length header\r\n");
         }
 
         // retrieve the filename the client wants to write to
@@ -117,7 +121,7 @@ public class UDPServer {
         String filepath = directoryPath + "/" + headers.get("httpUri");
         boolean valid = isFilepathValid(filepath);
         if (!valid) {
-            response = createHttpError(500, "Internal Server Error", "Invalid filepath\n");
+            response = createHttpError(500, "Internal Server Error", "Invalid filepath\r\n");
             return response;
         }
         File file = new File(filepath);
@@ -126,12 +130,12 @@ public class UDPServer {
             try {
                 boolean success = file.createNewFile();
                 if (!success) {
-                    response = createHttpError(500, "Internal Server Error", "Server could not create new file\n");
+                    response = createHttpError(500, "Internal Server Error", "Server could not create new file\r\n");
                     return response;
                 }
             } catch (IOException e) {
                 System.out.println(e.getMessage());
-                response = createHttpError(500, "Internal Server Error", "Server could not create new file\n");
+                response = createHttpError(500, "Internal Server Error", "Server could not create new file\r\n");
                 return response;
             }
         }
@@ -141,7 +145,7 @@ public class UDPServer {
             pw.println(headers.get("requestBody"));
             pw.flush();
         } catch (IOException e) {
-            response = createHttpError(500, "Internal Server Error", "Server could not write to file\n");
+            response = createHttpError(500, "Internal Server Error", "Server could not write to file\r\n");
             return response;
         }
 
@@ -149,7 +153,7 @@ public class UDPServer {
         response.append("HTTP/1.0 200 OK\n");
         response.append("Content-Type: text/html\n");
         response.append("Content-Length: ").append(body.length()).append("\n\n");
-        response.append(body);
+        response.append(body).append("\r\n");
         return response;
     }
 
@@ -215,24 +219,24 @@ public class UDPServer {
         return headers;
     }
 
-//    public static void sendResponse(ServerSocketManager ssm, HashMap<String, String> headers) {
-//        StringBuilder response = new StringBuilder();
-//
-//        if (headers.get("httpMethod").equalsIgnoreCase("get")) {
-//            response = handleGetRequest(headers);
-//        } else if (headers.get("httpMethod").equalsIgnoreCase("post")) {
-//            response = handlePostRequest(headers);
-//        }
-//
-//        if (verbose) System.out.println("Http server response: \n\n" + response);
-//
-//        ssm.outputStream.println(response);
-//        ssm.outputStream.flush();
-//    }
+    public static StringBuilder sendResponse(HashMap<String, String> headers) {
+        StringBuilder response = new StringBuilder();
+
+        if (headers.get("httpMethod").equalsIgnoreCase("get")) {
+            response = handleGetRequest(headers);
+        } else if (headers.get("httpMethod").equalsIgnoreCase("post")) {
+            response = handlePostRequest(headers);
+        }
+
+        if (verbose) System.out.println("Http server response: \n\n" + response);
+        return response;
+    }
 
     public static void main(String[] args) {
 
         int portNumber = 8080;
+        int routerPort = -1;
+        String routerHost = null;
 
         Options options = new Options();
 
@@ -240,6 +244,8 @@ public class UDPServer {
         options.addOption("p", true, "Specifies the port number that the server will listen and serve at. Default is 8080.");
         options.addOption("d", true, "Specifies the directory that the server will use to read/write\n" +
                 "requested files. Default is the current directory when launching the application.");
+        options.addOption(null, "router-port", true, "router port \t Specify the port on which the router is running.");
+        options.addOption(null, "router-host", true, "router hostname \t Specify the hostname (IP address or localhost) of the router.");
 
         CommandLineParser parser = new DefaultParser();
         CommandLine cmd = null;
@@ -255,6 +261,17 @@ public class UDPServer {
             printHttpfsHelp();
             System.exit(0);
         }
+        if (!cmd.hasOption("--router-port")) {
+            System.out.println("--router-port argument must be specified");
+            printHttpfsHelp();
+            System.exit(0);
+        }
+        if (!cmd.hasOption("--router-host")) {
+            System.out.println("--router-host argument must be specified");
+            printHttpfsHelp();
+            System.exit(0);
+        }
+
         if (cmd.hasOption("v")) {
             verbose = true;
             System.out.println("Setting verbose option...");
@@ -268,6 +285,15 @@ public class UDPServer {
         if (verbose) {
             System.out.println("Server current working directory: " + directoryPath);
         }
+
+        // parse router & server hostnames and port numbers
+        routerPort = Integer.parseInt(cmd.getOptionValue("--router-port"));
+        System.out.println("Router port number: " + routerPort);
+
+        routerHost = cmd.getOptionValue("--router-host");
+        System.out.println("Router hostname: " + routerHost);
+
+        SocketAddress routerAddress = new InetSocketAddress(routerHost, routerPort);
 
         // ========================= Interact with the client socket ==============================
         DatagramChannel channel = null;
@@ -293,6 +319,8 @@ public class UDPServer {
                 buffer.flip();
                 Packet packet = Packet.fromBuffer(buffer);
                 String payload = new String(packet.getPayload(), UTF_8);
+                InetAddress peerAddress = packet.getPeerAddress();
+                int peerPort = packet.getPeerPort();
                 httpMessage.add(payload);
                 System.out.println(packet);
                 buffer.flip();
@@ -301,16 +329,25 @@ public class UDPServer {
                     System.out.println("END OF PACKET!");
                     System.out.println("Data: " + httpMessage);
                     headers = receiveRequest(httpMessage);
+                    StringBuilder responseToSend = sendResponse(headers);
+                    List<Packet> packetsToSend = Packet.splitMessageIntoPackets(responseToSend, new InetSocketAddress(peerAddress, peerPort));
+                    for (Packet p: packetsToSend) {
+                        try {
+                            channel.send(p.toBufferArray(), routerAddress);
+                        } catch (IOException exception) {
+                            System.out.println("Error sending datagram packet to socket...");
+                            System.out.println(exception.getMessage());
+                            System.exit(0);
+                        }
+                    }
                 }
 
                 // send back an ack packet with no payload
                 Packet ack = new Packet(1, packet.getSequenceNumber(), packet.getPeerAddress(), packet.getPeerPort(), new byte[]{});
-                channel.send(ack.toBufferArray(), new InetSocketAddress(packet.getPeerAddress(), packet.getPeerPort()));
-
-//                HashMap<String, String> headers = receiveRequest();
-//                sendResponse(sm, headers);
+                channel.send(ack.toBufferArray(), new InetSocketAddress(peerAddress, peerPort));
             }
         } catch (NoSuchElementException | IOException e) {
+            System.out.println(e.getMessage());
             System.out.println("Client has disconnected...");
         }
     }
