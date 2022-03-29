@@ -152,10 +152,10 @@ public class UDPServer {
             return response;
         }
 
-        String body = "Successfully written to file\n";
-        response.append("HTTP/1.0 200 OK\n");
-        response.append("Content-Type: text/html\n");
-        response.append("Content-Length: ").append(body.length()).append("\n\n");
+        String body = "Successfully written to file\r\n";
+        response.append("HTTP/1.0 200 OK\r\n");
+        response.append("Content-Type: text/html\r\n");
+        response.append("Content-Length: ").append(body.length()).append("\r\n").append("\n\n");
         response.append(body).append("\r\n");
         return response;
     }
