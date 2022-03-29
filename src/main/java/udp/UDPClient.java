@@ -16,11 +16,12 @@ import java.util.*;
 
 import static java.nio.channels.SelectionKey.OP_READ;
 import static java.nio.charset.StandardCharsets.UTF_8;
+import static udp.UDPServer.receiveRequest;
 
 public class UDPClient {
 
     public static boolean verbose = false;
-    public static final int TIMEOUT = 5000; // timeout value in milliseconds
+    public static final int TIMEOUT = 1000; // timeout value in milliseconds
 
     public static void httpcHelp(String helpType) { // helpType can be "get" or "post"
         if (helpType.equalsIgnoreCase("get")) {
@@ -59,6 +60,43 @@ public class UDPClient {
                     "\t--server-host server hostname \t Specify the hostname (IP address or localhost) of the server.\n" +
                     "Use \"httpc.httpc help [command]\" for more information about a command.");
         }
+    }
+
+    public static HashMap<String, String> receiveResponse(List<String> httpMessage) throws NoSuchElementException, IOException {
+        // this hashmap will contain all the extracted request headers
+        HashMap<String, String> headers = new HashMap<>();
+
+        String httpRequest = String.join("", httpMessage);
+        if (verbose) System.out.println("HTTP request: \n" + httpRequest);
+
+        // extract the headers of the http message
+        String[] tokens = httpRequest.split("\r\n");
+        System.out.println("Tokens: \n" + Arrays.toString(tokens));
+
+        // From the request-line we can extract the method, version and uri of the http request
+        String[] requestLineTokens = tokens[0].split(" ");
+        headers.put("httpVersion", requestLineTokens[0].split("/")[1]);
+        headers.put("statusCode", requestLineTokens[1]);
+
+        for (int i = 1; i < tokens.length; i++) {
+            if (!tokens[i].isEmpty() || !tokens[i].isBlank()) {
+                String[] header = tokens[i].split(":");
+                if (header.length > 1) headers.put(header[0].trim().toLowerCase(), header[1].trim());
+            }
+        }
+
+        if (headers.get("content-length") != null) {
+            int contentLength = Integer.parseInt(headers.get("content-length"));
+
+            if (verbose) System.out.println("Parsing request body with content-length of " + contentLength);
+            headers.put("requestBody", tokens[tokens.length-1].trim());
+        }
+
+        if (verbose) {
+            System.out.println("\nRaw http request: " + httpRequest);
+            System.out.println("\nParsed request headers: " + headers);
+        }
+        return headers;
     }
 
     public static void main(String[] args) {
@@ -243,7 +281,7 @@ public class UDPClient {
             Selector selector = Selector.open();
 
             // register the channel on the selector and listen for READ events on the channel (when the line has data on it)
-            channel.register(selector, OP_READ);
+            SelectionKey key = channel.register(selector, OP_READ);
             while(true) {
                 // start timer on the SYN datagram that was sent
                 selector.select(TIMEOUT);
@@ -287,6 +325,7 @@ public class UDPClient {
                         buffer.flip();
                         Packet finalAck = Packet.fromBuffer(buffer);
                         System.out.println("Received 3-way handshake confirmation from server: " + finalAck);
+                        keys.clear();
                         break;
                     }
                 }
@@ -296,9 +335,9 @@ public class UDPClient {
             // =================================== Sending http request to server ===================================
 
             // Once the 3-way handshake has been established, we can send the datagrams associated with the http request
+            System.out.println("Sending http request to server...");
             for (Packet p: packetsToSend) {
                 try {
-                    System.out.println("Sending http request to server...");
                     channel.send(p.toBufferArray(), routerAddress);
                     // wait for ACK for that packet or resend it in case of timeout
                     while(true) {
@@ -307,69 +346,67 @@ public class UDPClient {
                         if (keys.isEmpty()) {
                             System.out.println("Timeout on datagram, sending datagram again...");
                             channel.send(p.toBufferArray(), routerAddress);
+                        } else {
+                            buffer.clear();
+                            channel.receive(buffer);
+                            buffer.flip();
+                            Packet ack = Packet.fromBuffer(buffer);
+                            System.out.println("Received ACK from server: " + ack);
+                            keys.clear();
+                            break;
                         }
-                        else break;
                     }
                 } catch (IOException exception) {
                     System.out.println("Error sending datagram packet to socket...");
+                    System.out.println(exception.getMessage());
                     System.exit(0);
                 }
             }
 
             // =================================== Receiving response from the server ===================================
+            // Remove selector on the datagram channel since we are now going to receive packets from the server (the client is now becoming the "server")
+            key.cancel();
+            channel.configureBlocking(true);
 
             List<String> httpMessage = new ArrayList<>();
-//        HashMap<String, String> responseHeaders;
-            System.out.println("Receiving response from server: ");
+            System.out.println("Ready to receive response from server...");
 
             while (true) {
                 buffer.clear();
 
                 // Wait for server response appearing on the channel
-                while(true) {
-                    selector.select(TIMEOUT);
-                    Set<SelectionKey> keys = selector.selectedKeys();
-                    if (!keys.isEmpty()) {
-                        break;
-                    }
-                }
-
                 channel.receive(buffer);
 
                 // Parse a packet from the received raw data.
                 buffer.flip();
                 Packet packet = Packet.fromBuffer(buffer);
+                System.out.println("Received packet: " + packet);
 
                 // Extract parameters from packet
                 String payload = new String(packet.getPayload(), UTF_8);
                 InetAddress peerAddress = packet.getPeerAddress();
                 int peerPort = packet.getPeerPort();
+                long sequenceNumber = packet.getSequenceNumber();
+
+                // send back an ACK packet to acknowledge receipt
+                Packet ack = new Packet(1, sequenceNumber, peerAddress, peerPort, new byte[0]);
+                System.out.println("Sending ACK packet...");
+                channel.send(ack.toBufferArray(), routerAddress);
 
                 httpMessage.add(payload);
-                System.out.println(packet);
                 buffer.flip();
 
                 if (payload.endsWith("\r\n")) {
                     System.out.println("END OF PACKET!");
                     System.out.println("Data: " + httpMessage);
-                    break;
-//                    headers = receiveRequest(httpMessage);
-//                    StringBuilder responseToSend = sendResponse(headers);
-//                    List<Packet> packetsToSend = Packet.splitMessageIntoPackets(responseToSend, new InetSocketAddress(peerAddress, peerPort));
-//                    for (Packet p: packetsToSend) {
-//                        try {
-//                            channel.send(p.toBufferArray(), routerAddress);
-//                        } catch (IOException exception) {
-//                            System.out.println("Error sending datagram packet to socket...");
-//                            System.out.println(exception.getMessage());
-//                            System.exit(0);
-//                        }
-//                    }
-                }
+                    HashMap<String, String> parsedMessage = receiveResponse(httpMessage);
 
-                // send back an ack packet with no payload
-//                Packet ack = new Packet(1, packet.getSequenceNumber(), packet.getPeerAddress(), packet.getPeerPort(), new byte[]{});
-//                channel.send(ack.toBufferArray(), new InetSocketAddress(peerAddress, peerPort));
+                    System.out.println("Server response: ");
+                    System.out.println(parsedMessage.get("requestBody"));
+
+                    // todo: terminate connection with the server
+                    break;
+                }
             }
 
         } catch (IOException e) {

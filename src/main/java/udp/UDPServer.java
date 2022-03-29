@@ -9,6 +9,8 @@ import java.net.SocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.channels.DatagramChannel;
+import java.nio.channels.SelectionKey;
+import java.nio.channels.Selector;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -17,6 +19,7 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
+import static udp.UDPClient.TIMEOUT;
 
 public class UDPServer {
     public static boolean verbose = false;
@@ -99,9 +102,9 @@ public class UDPServer {
         }
 
         if (!body.isEmpty()) {
-            response.append("HTTP/1.0 200 OK\n");
-            response.append("Content-Type: text/html\n");
-            response.append("Content-Length: ").append(body.length()).append("\n\n");
+            response.append("HTTP/1.0 200 OK\r\n");
+            response.append("Content-Type: text/html\r\n");
+            response.append("Content-Length: ").append(body.length()).append("\r\n").append("\n\n");
             response.append(body).append("\r\n");
         } else {
             response = createHttpError(404, "Not Found", "File not found on the server\r\n");
@@ -200,15 +203,6 @@ public class UDPServer {
             if (verbose) System.out.println("Parsing request body with content-length of " + contentLength);
 
             postRequestBody.append(tokens[tokens.length-1]);
-//            int bytesRead = 0;
-//            String s;
-//            while(bytesRead < contentLength) {
-//                s = tokens[startOfRequestBodyIndex];
-//                postRequestBody.append(s);
-//                startOfRequestBodyIndex++;
-//                bytesRead += s.length();
-//            }
-//            System.out.println("Bytes read: " + bytesRead);
             headers.put("requestBody", String.valueOf(postRequestBody));
         }
 
@@ -352,15 +346,38 @@ public class UDPServer {
                         headers = receiveRequest(httpMessage);
                         StringBuilder responseToSend = sendResponse(headers);
                         List<Packet> packetsToSend = Packet.splitMessageIntoPackets(responseToSend, new InetSocketAddress(peerAddress, peerPort));
+
+                        // Switch channel to non-blocking mode since we want to receive ACKs from the client
+                        channel.configureBlocking(false);
+                        Selector selector = Selector.open();
+                        SelectionKey key = channel.register(selector, SelectionKey.OP_READ);
+
+                        System.out.println("Sending http response to client...");
                         for (Packet p: packetsToSend) {
                             try {
+                                System.out.println("Sending packet to client: " + p);
                                 channel.send(p.toBufferArray(), routerAddress);
+                                // Wait for client ACK
+                                while(true) {
+                                    selector.select(TIMEOUT);
+                                    Set<SelectionKey> keys = selector.selectedKeys();
+                                    if (keys.isEmpty()) {
+                                        System.out.println("Timeout on datagram, sending datagram again...");
+                                        channel.send(p.toBufferArray(), routerAddress);
+                                    } else {
+                                        System.out.println("Received ACK from client for packet " + p);
+                                        break;
+                                    }
+                                    keys.clear();
+                                }
                             } catch (IOException exception) {
                                 System.out.println("Error sending datagram packet to socket...");
                                 System.out.println(exception.getMessage());
                                 System.exit(0);
                             }
                         }
+                        key.cancel();
+                        channel.configureBlocking(true); // Server will wait for new client connections
                         httpMessage.clear();
                     }
                 }
