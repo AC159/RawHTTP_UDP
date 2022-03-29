@@ -8,13 +8,19 @@ import java.net.*;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.channels.DatagramChannel;
+import java.nio.channels.SelectionKey;
+import java.nio.channels.Selector;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
 
+import static java.nio.channels.SelectionKey.OP_READ;
 import static java.nio.charset.StandardCharsets.UTF_8;
 
 public class UDPClient {
+
+    public static boolean verbose = false;
+    public static final int TIMEOUT = 5000; // timeout value in milliseconds
 
     public static void httpcHelp(String helpType) { // helpType can be "get" or "post"
         if (helpType.equalsIgnoreCase("get")) {
@@ -85,7 +91,6 @@ public class UDPClient {
             System.exit(1);
         }
 
-        boolean verbose = false;
         String[] headers = null;
         String url = args[args.length-1];
         String httpMethod = args[0];
@@ -215,7 +220,6 @@ public class UDPClient {
 
         List<Packet> packetsToSend = Packet.splitMessageIntoPackets(query, serverAddress);
 
-        // todo: perform a 3-way handshake with the server
         DatagramChannel channel = null;
         try {
             channel = DatagramChannel.open();
@@ -224,31 +228,123 @@ public class UDPClient {
             System.exit(0);
         }
 
-        for (Packet p: packetsToSend) {
-            try {
-                channel.send(p.toBufferArray(), routerAddress);
-            } catch (IOException exception) {
-                System.out.println("Error sending datagram packet to socket...");
-                System.exit(0);
-            }
-        }
+        // =================================== Performing 3-way handshake with the server ===================================
 
-        List<String> httpMessage = new ArrayList<>();
+        System.out.println("Performing 3-way handshake with the server...");
+        // Create SYN packet
+        Packet syn = new Packet(2, 1, serverAddress.getAddress(), serverAddress.getPort(), new byte[0]);
+
         ByteBuffer buffer = ByteBuffer.allocate(Packet.MAX_LEN).order(ByteOrder.BIG_ENDIAN);
-//        HashMap<String, String> responseHeaders;
-        System.out.println("Receiving response from server: ");
         try {
-            while (true) {
+            channel.send(syn.toBufferArray(), routerAddress);
 
+            // channel will be in non-blocking mode. That way, we can implement the timer functionality for each datagram
+            channel.configureBlocking(false);
+            Selector selector = Selector.open();
+
+            // register the channel on the selector and listen for READ events on the channel (when the line has data on it)
+            channel.register(selector, OP_READ);
+            while(true) {
+                // start timer on the SYN datagram that was sent
+                selector.select(TIMEOUT);
+                Set<SelectionKey> keys = selector.selectedKeys();
+                // send SYN datagram again if we haven't received anything
+                if (keys.isEmpty()) {
+                    System.out.println("Timeout on SYN request, sending SYN request again...");
+                    channel.send(syn.toBufferArray(), routerAddress);
+                }
+                else {
+                    keys.clear();
+                    break;
+                }
+            }
+
+            // At this point we know the server has sent a response to the SYN datagram
+            buffer.clear();
+            channel.receive(buffer);
+            buffer.flip();
+            Packet response = Packet.fromBuffer(buffer);
+            System.out.println("Server SYN-ACK response: ");
+            System.out.println(response);
+            if (response.getType() == 3) {
+                // received a syn-ack from the server & we can send an ACK again
+                System.out.println("Sending final ACK packet to complete 3-way handshake...");
+                Packet ack = new Packet(1, 2, serverAddress.getAddress(), serverAddress.getPort(), new byte[0]);
+                channel.send(ack.toBufferArray(), routerAddress);
+                // Wait for server response to ACK datagram
+                while(true) {
+                    // start timer on the ACK datagram that was sent
+                    selector.select(TIMEOUT);
+                    Set<SelectionKey> keys = selector.selectedKeys();
+                    // send ACK datagram again if we haven't received anything
+                    if (keys.isEmpty()) {
+                        System.out.println("Timeout on ACK request, sending ACK request again...");
+                        channel.send(ack.toBufferArray(), routerAddress);
+                    } else {
+                        // receive the final ACK packet from the server for the 3-way handshake
+                        buffer.clear();
+                        channel.receive(buffer);
+                        buffer.flip();
+                        Packet finalAck = Packet.fromBuffer(buffer);
+                        System.out.println("Received 3-way handshake confirmation from server: " + finalAck);
+                        break;
+                    }
+                }
+            }
+
+            System.out.println("3-WAY HANDSHAKE HAS BEEN ESTABLISHED!");
+            // =================================== Sending http request to server ===================================
+
+            // Once the 3-way handshake has been established, we can send the datagrams associated with the http request
+            for (Packet p: packetsToSend) {
+                try {
+                    System.out.println("Sending http request to server...");
+                    channel.send(p.toBufferArray(), routerAddress);
+                    // wait for ACK for that packet or resend it in case of timeout
+                    while(true) {
+                        selector.select(TIMEOUT);
+                        Set<SelectionKey> keys = selector.selectedKeys();
+                        if (keys.isEmpty()) {
+                            System.out.println("Timeout on datagram, sending datagram again...");
+                            channel.send(p.toBufferArray(), routerAddress);
+                        }
+                        else break;
+                    }
+                } catch (IOException exception) {
+                    System.out.println("Error sending datagram packet to socket...");
+                    System.exit(0);
+                }
+            }
+
+            // =================================== Receiving response from the server ===================================
+
+            List<String> httpMessage = new ArrayList<>();
+//        HashMap<String, String> responseHeaders;
+            System.out.println("Receiving response from server: ");
+
+            while (true) {
                 buffer.clear();
+
+                // Wait for server response appearing on the channel
+                while(true) {
+                    selector.select(TIMEOUT);
+                    Set<SelectionKey> keys = selector.selectedKeys();
+                    if (!keys.isEmpty()) {
+                        break;
+                    }
+                }
+
                 channel.receive(buffer);
 
                 // Parse a packet from the received raw data.
                 buffer.flip();
                 Packet packet = Packet.fromBuffer(buffer);
+
+                // Extract parameters from packet
                 String payload = new String(packet.getPayload(), UTF_8);
-//                InetAddress peerAddress = packet.getPeerAddress();
-//                int peerPort = packet.getPeerPort();
+                InetAddress peerAddress = packet.getPeerAddress();
+                int peerPort = packet.getPeerPort();
+
                 httpMessage.add(payload);
                 System.out.println(packet);
                 buffer.flip();
@@ -275,7 +371,8 @@ public class UDPClient {
 //                Packet ack = new Packet(1, packet.getSequenceNumber(), packet.getPeerAddress(), packet.getPeerPort(), new byte[]{});
 //                channel.send(ack.toBufferArray(), new InetSocketAddress(peerAddress, peerPort));
             }
-        } catch (NoSuchElementException | IOException e) {
+
+        } catch (IOException e) {
             System.out.println(e.getMessage());
         }
 

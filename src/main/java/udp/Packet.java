@@ -46,6 +46,10 @@ public class Packet {
         return this.peerPort;
     }
 
+    public int getType() {
+        return this.type;
+    }
+
     public ByteBuffer toBufferArray() {
         ByteBuffer buffer = ByteBuffer.allocate(MAX_LEN).order(ByteOrder.BIG_ENDIAN);
         buffer.put((byte) type);
@@ -60,7 +64,8 @@ public class Packet {
     public static Packet fromBuffer(ByteBuffer buffer) throws IOException {
 
         if (buffer.limit() < MIN_LEN || buffer.limit() > MAX_LEN) {
-            throw new IOException("Invalid length");
+            System.out.println("Buffer length: " + buffer.limit());
+            throw new IOException("Invalid buffer length");
         }
 
         int type = buffer.get();
@@ -85,7 +90,8 @@ public class Packet {
         List<Packet> packetsToSend = new ArrayList<>();
 
         // Make udp datagrams from this sequence of bytes
-        long sequenceNumber = 1;
+        // start with a sequence number of 3 (3-way handshake took sequence numbers 1 and 2) which will be incremented as communication goes on
+        long sequenceNumber = 3;
         int nbrOfPackets = (int) Math.ceil((float) payloadLength / Packet.MAX_LEN);
         for (int i = 0; i < nbrOfPackets; i++) {
             Packet p = new Packet(0, sequenceNumber, serverAddress.getAddress(), serverAddress.getPort(),

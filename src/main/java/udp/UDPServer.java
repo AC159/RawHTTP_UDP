@@ -318,33 +318,52 @@ public class UDPServer {
                 // Parse a packet from the received raw data.
                 buffer.flip();
                 Packet packet = Packet.fromBuffer(buffer);
-                String payload = new String(packet.getPayload(), UTF_8);
+                System.out.println("Received packet from client: " + packet);
+                int packetType = packet.getType();
+                long sequenceNumber = packet.getSequenceNumber();
                 InetAddress peerAddress = packet.getPeerAddress();
                 int peerPort = packet.getPeerPort();
-                httpMessage.add(payload);
-                System.out.println(packet);
-                buffer.flip();
 
-                if (payload.endsWith("\r\n")) {
-                    System.out.println("END OF PACKET!");
-                    System.out.println("Data: " + httpMessage);
-                    headers = receiveRequest(httpMessage);
-                    StringBuilder responseToSend = sendResponse(headers);
-                    List<Packet> packetsToSend = Packet.splitMessageIntoPackets(responseToSend, new InetSocketAddress(peerAddress, peerPort));
-                    for (Packet p: packetsToSend) {
-                        try {
-                            channel.send(p.toBufferArray(), routerAddress);
-                        } catch (IOException exception) {
-                            System.out.println("Error sending datagram packet to socket...");
-                            System.out.println(exception.getMessage());
-                            System.exit(0);
-                        }
-                    }
-                    httpMessage.clear();
+                if (packetType != 2) {
+                    // send back an ACK packet with no payload only if the packet is not a SYN packet
+                    Packet ack = new Packet(1, sequenceNumber, peerAddress, peerPort, new byte[0]);
+                    System.out.println("Sending ACK packet...");
+                    channel.send(ack.toBufferArray(), routerAddress);
                 }
-                // send back an ack packet with no payload
-                Packet ack = new Packet(1, packet.getSequenceNumber(), packet.getPeerAddress(), packet.getPeerPort(), new byte[]{});
-                channel.send(ack.toBufferArray(), new InetSocketAddress(peerAddress, peerPort));
+
+                if (packetType == 2) {
+                    // connection request from a client
+                    // send a SYN-ACK datagram back
+                    Packet synAck = new Packet(3, sequenceNumber, peerAddress, peerPort, new byte[0]);
+                    System.out.println("Connection request from client...");
+                    System.out.println("Sending SYN-ACK to client...");
+                    channel.send(synAck.toBufferArray(), routerAddress);
+                }
+
+                if (packetType == 0) {
+                    String payload = new String(packet.getPayload(), UTF_8);
+                    httpMessage.add(payload);
+                    System.out.println(packet);
+                    buffer.flip();
+
+                    if (payload.endsWith("\r\n")) {
+                        System.out.println("END OF PACKET!");
+                        System.out.println("Data: " + httpMessage);
+                        headers = receiveRequest(httpMessage);
+                        StringBuilder responseToSend = sendResponse(headers);
+                        List<Packet> packetsToSend = Packet.splitMessageIntoPackets(responseToSend, new InetSocketAddress(peerAddress, peerPort));
+                        for (Packet p: packetsToSend) {
+                            try {
+                                channel.send(p.toBufferArray(), routerAddress);
+                            } catch (IOException exception) {
+                                System.out.println("Error sending datagram packet to socket...");
+                                System.out.println(exception.getMessage());
+                                System.exit(0);
+                            }
+                        }
+                        httpMessage.clear();
+                    }
+                }
             }
         } catch (NoSuchElementException | IOException e) {
             System.out.println(e.getMessage());
