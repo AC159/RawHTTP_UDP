@@ -20,6 +20,7 @@ import java.util.stream.Stream;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static udp.UDPClient.TIMEOUT;
+import static udp.UDPClient.terminateConnectionWithServer;
 
 public class UDPServer {
     public static boolean verbose = false;
@@ -226,6 +227,58 @@ public class UDPServer {
         return response;
     }
 
+    public static void terminateConnectionWithClient(DatagramChannel channel, InetSocketAddress peerAddress, SocketAddress routerAddress, long lastSequenceNum) {
+        try {
+            ByteBuffer buffer = ByteBuffer.allocate(Packet.MAX_LEN).order(ByteOrder.BIG_ENDIAN);
+            channel.configureBlocking(false);
+            Selector selector = Selector.open();
+            SelectionKey key = channel.register(selector, SelectionKey.OP_READ);
+
+            // Send ACK packet to ack the FIN packet sent by the client
+            Packet ack = new Packet(1, lastSequenceNum, peerAddress.getAddress(), peerAddress.getPort(), new byte[0]);
+            System.out.println("Sending ACK packet in response to client FIN request...");
+            channel.send(ack.toBufferArray(), routerAddress);
+
+            // Send FIN packet
+            System.out.println("Sending FIN packet to client...");
+            Packet fin = new Packet(4, lastSequenceNum, peerAddress.getAddress(), peerAddress.getPort(), new byte[0]);
+            channel.send(fin.toBufferArray(), routerAddress);
+
+            while(true) {
+                selector.select(TIMEOUT);
+                Set<SelectionKey> keys = selector.selectedKeys();
+                if (keys.isEmpty()) {
+                    System.out.println("Timeout on FIN packet, sending FIN again...");
+                    channel.send(fin.toBufferArray(), routerAddress);
+                } else {
+                    // we have received a response
+                    channel.receive(buffer);
+                    buffer.flip();
+                    Packet response = Packet.fromBuffer(buffer);
+                    System.out.println("Received packet from client: " + response);
+                    int type = response.getType();
+                    if (type == 4) {
+                        // If it is a FIN packet, then the client has not received the ACK that we previously sent
+                        System.out.println("Sending ACK packet again in response to FIN request...");
+                        channel.send(ack.toBufferArray(), routerAddress);
+                    } else if (type == 1) {
+                        // Received the client's ACK packet to the server's FIN request. We can now terminate
+                        System.out.println("Terminating connection with client...");
+                        break;
+                    }
+                }
+                keys.clear();
+                buffer.clear();
+            }
+            key.cancel();
+            channel.configureBlocking(true);
+        } catch (IOException e) {
+            System.out.println("Could not terminate connection with the client...");
+            System.out.println(e.getMessage());
+            System.exit(0);
+        }
+    }
+
     public static void main(String[] args) {
 
         int portNumber = 8080;
@@ -312,13 +365,14 @@ public class UDPServer {
                 // Parse a packet from the received raw data.
                 buffer.flip();
                 Packet packet = Packet.fromBuffer(buffer);
+
                 System.out.println("Received packet from client: " + packet);
                 int packetType = packet.getType();
                 long sequenceNumber = packet.getSequenceNumber();
                 InetAddress peerAddress = packet.getPeerAddress();
                 int peerPort = packet.getPeerPort();
 
-                if (packetType != 2) {
+                if (packetType != 2 && packetType != 4) {
                     // send back an ACK packet with no payload only if the packet is not a SYN packet
                     Packet ack = new Packet(1, sequenceNumber, peerAddress, peerPort, new byte[0]);
                     System.out.println("Sending ACK packet...");
@@ -334,11 +388,16 @@ public class UDPServer {
                     channel.send(synAck.toBufferArray(), routerAddress);
                 }
 
+                if (packetType == 4) {
+                    // close connection with the client
+                    System.out.println("Client wants to terminate connection...");
+                    terminateConnectionWithClient(channel, new InetSocketAddress(peerAddress, peerPort), routerAddress, sequenceNumber);
+                }
+
                 if (packetType == 0) {
                     String payload = new String(packet.getPayload(), UTF_8);
                     httpMessage.add(payload);
                     System.out.println(packet);
-                    buffer.flip();
 
                     if (payload.endsWith("\r\n")) {
                         System.out.println("END OF PACKET!");
@@ -353,10 +412,17 @@ public class UDPServer {
                         SelectionKey key = channel.register(selector, SelectionKey.OP_READ);
 
                         System.out.println("Sending http response to client...");
+                        ByteBuffer byteBuffer = ByteBuffer.allocate(Packet.MAX_LEN).order(ByteOrder.BIG_ENDIAN);
+                        boolean terminationRequestFlag = false;
+
                         for (Packet p: packetsToSend) {
+
+                            if (terminationRequestFlag) break;
+
                             try {
                                 System.out.println("Sending packet to client: " + p);
                                 channel.send(p.toBufferArray(), routerAddress);
+
                                 // Wait for client ACK
                                 while(true) {
                                     selector.select(TIMEOUT);
@@ -365,9 +431,30 @@ public class UDPServer {
                                         System.out.println("Timeout on datagram, sending datagram again...");
                                         channel.send(p.toBufferArray(), routerAddress);
                                     } else {
-                                        System.out.println("Received ACK from client for packet " + p);
-                                        break;
+                                        channel.receive(byteBuffer);
+                                        byteBuffer.flip();
+                                        Packet ack = Packet.fromBuffer(byteBuffer);
+                                        System.out.println("Received packet from client: " + ack);
+
+                                        // check if we have received an ACK for the correct packet
+                                        if (p.getSequenceNumber() == ack.getSequenceNumber() && ack.getType() == 1) {
+                                            System.out.println("Received ACK from client: " + ack);
+                                            break;
+                                        } else if (ack.getType() == 4) {
+//                                            // close connection with the client
+//                                            System.out.println("Client wants to terminate connection...");
+//                                            terminateConnectionWithClient(channel, new InetSocketAddress(ack.getPeerAddress(), ack.getPeerPort()), routerAddress,
+//                                                    ack.getSequenceNumber());
+//                                            terminationRequestFlag = true;
+                                            break;
+                                        } else {
+                                            // otherwise, we have not received the expected packet so just acknowledge it
+                                            Packet ackAgain = new Packet(1, ack.getSequenceNumber(), ack.getPeerAddress(), ack.getPeerPort(), new byte[0]);
+                                            System.out.println("Sending ACK packet again since received an older packet...");
+                                            channel.send(ackAgain.toBufferArray(), routerAddress);
+                                        }
                                     }
+                                    byteBuffer.clear();
                                     keys.clear();
                                 }
                             } catch (IOException exception) {

@@ -16,7 +16,7 @@ public class Packet {
     public static final int MIN_LEN = 11;
     public static final int MAX_LEN = 11 + 1024;
 
-    private final int type; // type of the packet, which can be Data (0), ACK (1), SYN (2), SYN-ACK (3), NAK (4)
+    private final int type; // type of the packet, which can be Data (0), ACK (1), SYN (2), SYN-ACK (3), FIN (4), NAK (5)
     private final long sequenceNumber; // unsigned big endian
     private final InetAddress peerAddress;
     private final int peerPort;
@@ -112,7 +112,8 @@ public class Packet {
         else if (type == 1) packetType = "ACK";
         else if (type == 2) packetType = "SYN";
         else if (type == 3) packetType = "SYN-ACK";
-        else if (type == 4) packetType = "NACK";
+        else if (type == 4) packetType = "FIN";
+        else if (type == 5) packetType = "ACK";
         return String.format("Datagram #%d type=%d (%s) peer=%s:%d, size=%d", sequenceNumber, type, packetType, peerAddress, peerPort, payload.length);
     }
 
