@@ -1,5 +1,7 @@
 # Raw Http Client and Server using the UDP Protocol
 
+## This project's goal is to implement some services that the TCP protocol provides such as reliable transmission over an unreliable network using selective repeat (the unreliable network is simulated by the router program, see below.)
+
 ## 1) Overview
 
 ### Communication model between the client and the server over an unreliable network
