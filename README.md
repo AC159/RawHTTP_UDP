@@ -2,6 +2,17 @@
 
 ## 1) Overview
 
+### Communication model between the client and the server over an unreliable network
+![Communication model between client-router-server](https://github.com/AC159/RawHTTP_UDP/blob/master/readme_images/communication_model.png?raw=true)
+
+### Structure of UDP packets that are exchanged between client-router-server
+
+![Packet structure](https://github.com/AC159/RawHTTP_UDP/blob/master/readme_images/packet_structure.png?raw=true)
+
+### Communication flow example
+
+![Communication flow](https://github.com/AC159/RawHTTP_UDP/blob/master/readme_images/flow_example.png?raw=true)
+
 
 ## 2) Building the project
   
