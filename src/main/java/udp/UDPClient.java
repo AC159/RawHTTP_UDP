@@ -20,7 +20,7 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 public class UDPClient {
 
     public static boolean verbose = false;
-    public static final int TIMEOUT = 30; // timeout value in milliseconds
+    public static final int TIMEOUT = 1000; // timeout value in milliseconds
 
     public static void httpcHelp(String helpType) { // helpType can be "get" or "post"
         if (helpType.equalsIgnoreCase("get")) {
@@ -128,7 +128,11 @@ public class UDPClient {
                         break;
                     } else {
                         System.out.println("Received packet from server other than expected ACK...");
-                        channel.send(fin.toBufferArray(), routerAddress);
+                        // ACK the packet if the server is still sending DATA packets. This means the server has not received all the ACKs for the DATA packets
+                        if (ack.getType() == 0) {
+                            Packet anotherAck = new Packet(1, ack.getSequenceNumber(), ack.getPeerAddress(), ack.getPeerPort(), new byte[0]);
+                            channel.send(anotherAck.toBufferArray(), routerAddress);
+                        }
                     }
                 }
                 keys.clear();
@@ -137,11 +141,6 @@ public class UDPClient {
 
             // Now we know the server is aware that the client wants to terminate the connection, we can now wait for the server to send the final FIN
             Packet finalAck = new Packet(1, lastSequenceNum+1, peerAddress.getAddress(), peerAddress.getPort(), new byte[0]);
-//            buffer.clear();
-//            channel.receive(buffer);
-//            buffer.flip();
-//            Packet finalFin = Packet.fromBuffer(buffer);
-//            System.out.println("Received server termination FIN packet: " + finalFin);
 
             // Send ACK to the server's FIN & wait for 2 timeouts
             channel.send(finalAck.toBufferArray(), routerAddress);
@@ -151,7 +150,7 @@ public class UDPClient {
                 selector.select(TIMEOUT);
                 Set<SelectionKey> keys = selector.selectedKeys();
                 if (keys.isEmpty()) {
-                    if (count >= 5) break;
+                    if (count >= 3) break;
                     else count++;
                 } else {
                     channel.receive(buffer);
@@ -159,7 +158,7 @@ public class UDPClient {
                     Packet p = Packet.fromBuffer(buffer);
                     System.out.println("Received server response just before terminating: " + p);
                     // Send the final ACK again since the server keeps sending packets which means it did not receive the final ACK to its FIN request
-                    channel.send(finalAck.toBufferArray(), routerAddress);
+                    if (p.getType() == 4) channel.send(finalAck.toBufferArray(), routerAddress);
                 }
                 buffer.clear();
                 keys.clear();
@@ -428,8 +427,9 @@ public class UDPClient {
                             channel.receive(buffer);
                             buffer.flip();
                             Packet ack = Packet.fromBuffer(buffer);
-                            // check if we have received an ACK for the correct packet
-                            if (p.getSequenceNumber() == ack.getSequenceNumber() && ack.getType() == 1) {
+                            // check if we have received an ACK for the correct packet or if we start receiving data from the server, it means the server has
+                            // already processed our request
+                            if ((p.getSequenceNumber() == ack.getSequenceNumber() && ack.getType() == 1) || ack.getType() == 0) {
                                 System.out.println("Received ACK from server: " + ack);
                                 break;
                             }

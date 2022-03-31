@@ -20,7 +20,6 @@ import java.util.stream.Stream;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static udp.UDPClient.TIMEOUT;
-import static udp.UDPClient.terminateConnectionWithServer;
 
 public class UDPServer {
     public static boolean verbose = false;
@@ -99,7 +98,7 @@ public class UDPServer {
                 }
             }
         } catch (IOException e) {
-            response = createHttpError(404, "Not Found", "File not found on the server\r\n");
+            response = createHttpError(404, "Not Found", "File not found on the server");
         }
 
         if (!body.isEmpty()) {
@@ -108,7 +107,7 @@ public class UDPServer {
             response.append("Content-Length: ").append(body.length()).append("\r\n").append("\n\n");
             response.append(body).append("\r\n");
         } else {
-            response = createHttpError(404, "Not Found", "File not found on the server\r\n");
+            response = createHttpError(404, "Not Found", "File not found on the server");
         }
         return response;
     }
@@ -117,7 +116,7 @@ public class UDPServer {
         StringBuilder response = new StringBuilder();
 
         if (headers.get("content-length") == null) {
-            response = createHttpError(400, "Bad Request", "Missing Content-Length header\r\n");
+            response = createHttpError(400, "Bad Request", "Missing Content-Length header");
         }
 
         // retrieve the filename the client wants to write to
@@ -125,7 +124,7 @@ public class UDPServer {
         String filepath = directoryPath + "/" + headers.get("httpUri");
         boolean valid = isFilepathValid(filepath);
         if (!valid) {
-            response = createHttpError(500, "Internal Server Error", "Invalid filepath\r\n");
+            response = createHttpError(500, "Internal Server Error", "Invalid filepath");
             return response;
         }
         File file = new File(filepath);
@@ -134,12 +133,12 @@ public class UDPServer {
             try {
                 boolean success = file.createNewFile();
                 if (!success) {
-                    response = createHttpError(500, "Internal Server Error", "Server could not create new file\r\n");
+                    response = createHttpError(500, "Internal Server Error", "Server could not create new file");
                     return response;
                 }
             } catch (IOException e) {
                 System.out.println(e.getMessage());
-                response = createHttpError(500, "Internal Server Error", "Server could not create new file\r\n");
+                response = createHttpError(500, "Internal Server Error", "Server could not create new file");
                 return response;
             }
         }
@@ -149,7 +148,7 @@ public class UDPServer {
             pw.println(headers.get("requestBody"));
             pw.flush();
         } catch (IOException e) {
-            response = createHttpError(500, "Internal Server Error", "Server could not write to file\r\n");
+            response = createHttpError(500, "Internal Server Error", "Server could not write to file");
             return response;
         }
 
@@ -163,8 +162,8 @@ public class UDPServer {
 
     public static StringBuilder createHttpError(int statusCode, String statusCodeMessage, String errorBodyMessage) {
         StringBuilder response = new StringBuilder();
-        response.append("HTTP/1.0 ").append(statusCode).append(" ").append(statusCodeMessage).append("\nContent-Type: text/html\n")
-                .append("Content-Length: ").append(errorBodyMessage.length()).append("\n\n").append(errorBodyMessage);
+        response.append("HTTP/1.0 ").append(statusCode).append(" ").append(statusCodeMessage).append("\r\n").append("\nContent-Type: text/html\r\n")
+                .append("Content-Length: ").append(errorBodyMessage.length()).append("\r\n").append("\n\n").append(errorBodyMessage).append("\r\n");
         return response;
     }
 
@@ -272,6 +271,7 @@ public class UDPServer {
             }
             key.cancel();
             channel.configureBlocking(true);
+            System.out.println("Ready for new client connections...");
         } catch (IOException e) {
             System.out.println("Could not terminate connection with the client...");
             System.out.println(e.getMessage());
@@ -373,7 +373,7 @@ public class UDPServer {
                 int peerPort = packet.getPeerPort();
 
                 if (packetType != 2 && packetType != 4) {
-                    // send back an ACK packet with no payload only if the packet is not a SYN packet
+                    // send back an ACK packet with no payload only if the packet is not a SYN or FIN packet
                     Packet ack = new Packet(1, sequenceNumber, peerAddress, peerPort, new byte[0]);
                     System.out.println("Sending ACK packet...");
                     channel.send(ack.toBufferArray(), routerAddress);
@@ -401,7 +401,7 @@ public class UDPServer {
 
                     if (payload.endsWith("\r\n")) {
                         System.out.println("END OF PACKET!");
-                        System.out.println("Data: " + httpMessage);
+
                         headers = receiveRequest(httpMessage);
                         StringBuilder responseToSend = sendResponse(headers);
                         List<Packet> packetsToSend = Packet.splitMessageIntoPackets(responseToSend, new InetSocketAddress(peerAddress, peerPort));
@@ -413,12 +413,8 @@ public class UDPServer {
 
                         System.out.println("Sending http response to client...");
                         ByteBuffer byteBuffer = ByteBuffer.allocate(Packet.MAX_LEN).order(ByteOrder.BIG_ENDIAN);
-                        boolean terminationRequestFlag = false;
 
                         for (Packet p: packetsToSend) {
-
-                            if (terminationRequestFlag) break;
-
                             try {
                                 System.out.println("Sending packet to client: " + p);
                                 channel.send(p.toBufferArray(), routerAddress);
@@ -440,18 +436,6 @@ public class UDPServer {
                                         if (p.getSequenceNumber() == ack.getSequenceNumber() && ack.getType() == 1) {
                                             System.out.println("Received ACK from client: " + ack);
                                             break;
-                                        } else if (ack.getType() == 4) {
-//                                            // close connection with the client
-//                                            System.out.println("Client wants to terminate connection...");
-//                                            terminateConnectionWithClient(channel, new InetSocketAddress(ack.getPeerAddress(), ack.getPeerPort()), routerAddress,
-//                                                    ack.getSequenceNumber());
-//                                            terminationRequestFlag = true;
-                                            break;
-                                        } else {
-                                            // otherwise, we have not received the expected packet so just acknowledge it
-                                            Packet ackAgain = new Packet(1, ack.getSequenceNumber(), ack.getPeerAddress(), ack.getPeerPort(), new byte[0]);
-                                            System.out.println("Sending ACK packet again since received an older packet...");
-                                            channel.send(ackAgain.toBufferArray(), routerAddress);
                                         }
                                     }
                                     byteBuffer.clear();
