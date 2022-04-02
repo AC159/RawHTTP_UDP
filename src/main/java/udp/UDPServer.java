@@ -356,6 +356,8 @@ public class UDPServer {
         List<String> httpMessage = new ArrayList<>();
         ByteBuffer buffer = ByteBuffer.allocate(Packet.MAX_LEN).order(ByteOrder.BIG_ENDIAN);
         HashMap<String, String> headers;
+        List<Long> receivedPackets = new ArrayList<>();
+
         try {
             while (true) {
 
@@ -394,9 +396,10 @@ public class UDPServer {
                     terminateConnectionWithClient(channel, new InetSocketAddress(peerAddress, peerPort), routerAddress, sequenceNumber);
                 }
 
-                if (packetType == 0) {
+                if (packetType == 0 && !receivedPackets.contains(sequenceNumber)) {
                     String payload = new String(packet.getPayload(), UTF_8);
                     httpMessage.add(payload);
+                    receivedPackets.add(sequenceNumber);
                     System.out.println(packet);
 
                     if (payload.endsWith("\r\n")) {
@@ -450,6 +453,7 @@ public class UDPServer {
                         key.cancel();
                         channel.configureBlocking(true); // Server will wait for new client connections
                         httpMessage.clear();
+                        receivedPackets.clear();
                     }
                 }
             }

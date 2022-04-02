@@ -20,7 +20,7 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 public class UDPClient {
 
     public static boolean verbose = false;
-    public static final int TIMEOUT = 1000; // timeout value in milliseconds
+    public static final int TIMEOUT = 30; // timeout value in milliseconds
 
     public static void httpcHelp(String helpType) { // helpType can be "get" or "post"
         if (helpType.equalsIgnoreCase("get")) {
@@ -325,7 +325,7 @@ public class UDPClient {
 
         System.out.println("\nPerforming query: \n");
         System.out.println(query);
-        System.out.println("Sending packet of length: " + query.length());
+        System.out.println("Sending http request of length: " + query.length());
 
         // Convert router & server hostnames and ports into Inet addresses
         InetSocketAddress serverAddress = new InetSocketAddress(serverHost, serverPort);
@@ -415,6 +415,7 @@ public class UDPClient {
             System.out.println("Sending http request to server...");
             for (Packet p: packetsToSend) {
                 try {
+                    System.out.println("Sending packet: " + p);
                     channel.send(p.toBufferArray(), routerAddress);
                     // wait for ACK for that packet or resend it in case of timeout
                     while(true) {

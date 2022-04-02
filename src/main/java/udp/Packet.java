@@ -14,7 +14,7 @@ import java.util.List;
 public class Packet {
 
     public static final int MIN_LEN = 11;
-    public static final int MAX_LEN = 11 + 1024;
+    public static final int MAX_LEN = 1024;
 
     private final int type; // type of the packet, which can be Data (0), ACK (1), SYN (2), SYN-ACK (3), FIN (4), NAK (5)
     private final long sequenceNumber; // unsigned big endian
@@ -92,8 +92,8 @@ public class Packet {
         // Make udp datagrams from this sequence of bytes
         // start with a sequence number of 3 (3-way handshake took sequence numbers 1 and 2) which will be incremented as communication goes on
         long sequenceNumber = 3;
-        int nbrOfPackets = (int) Math.ceil((float) payloadLength / Packet.MAX_LEN);
-        for (int i = 0; i < nbrOfPackets; i++) {
+
+        while (payloadStartRange < payloadLength) {
             Packet p = new Packet(0, sequenceNumber, serverAddress.getAddress(), serverAddress.getPort(),
                     Arrays.copyOfRange(bytes, payloadStartRange, Math.min(payloadLength, payloadEndRange)));
             packetsToSend.add(p);
