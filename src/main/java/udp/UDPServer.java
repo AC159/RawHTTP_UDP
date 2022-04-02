@@ -176,7 +176,6 @@ public class UDPServer {
 
         // extract the headers of the http message
         String[] tokens = httpRequest.split("\r\n");
-        System.out.println("Tokens: \n" + Arrays.toString(tokens));
 
         // From the request-line we can extract the method, version and uri of the http request
         String[] requestLineTokens = tokens[0].split(" ");
@@ -235,11 +234,11 @@ public class UDPServer {
 
             // Send ACK packet to ack the FIN packet sent by the client
             Packet ack = new Packet(1, lastSequenceNum, peerAddress.getAddress(), peerAddress.getPort(), new byte[0]);
-            System.out.println("Sending ACK packet in response to client FIN request...");
+            if (verbose) System.out.println("Sending ACK packet in response to client FIN request...");
             channel.send(ack.toBufferArray(), routerAddress);
 
             // Send FIN packet
-            System.out.println("Sending FIN packet to client...");
+            if (verbose) System.out.println("Sending FIN packet to client...");
             Packet fin = new Packet(4, lastSequenceNum, peerAddress.getAddress(), peerAddress.getPort(), new byte[0]);
             channel.send(fin.toBufferArray(), routerAddress);
 
@@ -247,18 +246,18 @@ public class UDPServer {
                 selector.select(TIMEOUT);
                 Set<SelectionKey> keys = selector.selectedKeys();
                 if (keys.isEmpty()) {
-                    System.out.println("Timeout on FIN packet, sending FIN again...");
+                    if (verbose) System.out.println("Timeout on FIN packet, sending FIN again...");
                     channel.send(fin.toBufferArray(), routerAddress);
                 } else {
                     // we have received a response
                     channel.receive(buffer);
                     buffer.flip();
                     Packet response = Packet.fromBuffer(buffer);
-                    System.out.println("Received packet from client: " + response);
+                    if (verbose) System.out.println("Received packet from client: " + response);
                     int type = response.getType();
                     if (type == 4) {
                         // If it is a FIN packet, then the client has not received the ACK that we previously sent
-                        System.out.println("Sending ACK packet again in response to FIN request...");
+                        if (verbose) System.out.println("Sending ACK packet again in response to FIN request...");
                         channel.send(ack.toBufferArray(), routerAddress);
                     } else if (type == 1) {
                         // Received the client's ACK packet to the server's FIN request. We can now terminate
@@ -335,10 +334,10 @@ public class UDPServer {
 
         // parse router & server hostnames and port numbers
         routerPort = Integer.parseInt(cmd.getOptionValue("--router-port"));
-        System.out.println("Router port number: " + routerPort);
+        if (verbose) System.out.println("Router port number: " + routerPort);
 
         routerHost = cmd.getOptionValue("--router-host");
-        System.out.println("Router hostname: " + routerHost);
+        if (verbose) System.out.println("Router hostname: " + routerHost);
 
         SocketAddress routerAddress = new InetSocketAddress(routerHost, routerPort);
 
@@ -347,7 +346,7 @@ public class UDPServer {
         try {
             channel = DatagramChannel.open();
             channel.bind(new InetSocketAddress(portNumber)); // make the server listen on the specified port (not an ephemeral one)
-            if (verbose) System.out.println("Server listening at " + channel.getLocalAddress());
+            System.out.println("Server listening at " + channel.getLocalAddress());
         } catch (IOException exception) {
             System.out.println("Error creating a datagram channel for server...");
             System.exit(0);
@@ -368,7 +367,7 @@ public class UDPServer {
                 buffer.flip();
                 Packet packet = Packet.fromBuffer(buffer);
 
-                System.out.println("Received packet from client: " + packet);
+                if (verbose) System.out.println("Received packet from client: " + packet);
                 int packetType = packet.getType();
                 long sequenceNumber = packet.getSequenceNumber();
                 InetAddress peerAddress = packet.getPeerAddress();
@@ -377,7 +376,7 @@ public class UDPServer {
                 if (packetType != 2 && packetType != 4) {
                     // send back an ACK packet with no payload only if the packet is not a SYN or FIN packet
                     Packet ack = new Packet(1, sequenceNumber, peerAddress, peerPort, new byte[0]);
-                    System.out.println("Sending ACK packet...");
+                    if (verbose) System.out.println("Sending ACK packet...");
                     channel.send(ack.toBufferArray(), routerAddress);
                 }
 
@@ -386,7 +385,7 @@ public class UDPServer {
                     // send a SYN-ACK datagram back
                     Packet synAck = new Packet(3, sequenceNumber, peerAddress, peerPort, new byte[0]);
                     System.out.println("Connection request from client...");
-                    System.out.println("Sending SYN-ACK to client...");
+                    if (verbose) System.out.println("Sending SYN-ACK to client...");
                     channel.send(synAck.toBufferArray(), routerAddress);
                 }
 
@@ -400,10 +399,10 @@ public class UDPServer {
                     String payload = new String(packet.getPayload(), UTF_8);
                     httpMessage.add(payload);
                     receivedPackets.add(sequenceNumber);
-                    System.out.println(packet);
+                    if (verbose) System.out.println(packet);
 
                     if (payload.endsWith("\r\n")) {
-                        System.out.println("END OF PACKET!");
+                        if (verbose) System.out.println("END OF PACKET!");
 
                         headers = receiveRequest(httpMessage);
                         StringBuilder responseToSend = sendResponse(headers);
@@ -414,12 +413,12 @@ public class UDPServer {
                         Selector selector = Selector.open();
                         SelectionKey key = channel.register(selector, SelectionKey.OP_READ);
 
-                        System.out.println("Sending http response to client...");
+                        if (verbose) System.out.println("Sending http response to client...");
                         ByteBuffer byteBuffer = ByteBuffer.allocate(Packet.MAX_LEN).order(ByteOrder.BIG_ENDIAN);
 
                         for (Packet p: packetsToSend) {
                             try {
-                                System.out.println("Sending packet to client: " + p);
+                                if (verbose) System.out.println("Sending packet to client: " + p);
                                 channel.send(p.toBufferArray(), routerAddress);
 
                                 // Wait for client ACK
@@ -427,17 +426,17 @@ public class UDPServer {
                                     selector.select(TIMEOUT);
                                     Set<SelectionKey> keys = selector.selectedKeys();
                                     if (keys.isEmpty()) {
-                                        System.out.println("Timeout on datagram, sending datagram again...");
+                                        if (verbose) System.out.println("Timeout on datagram, sending datagram again...");
                                         channel.send(p.toBufferArray(), routerAddress);
                                     } else {
                                         channel.receive(byteBuffer);
                                         byteBuffer.flip();
                                         Packet ack = Packet.fromBuffer(byteBuffer);
-                                        System.out.println("Received packet from client: " + ack);
+                                        if (verbose) System.out.println("Received packet from client: " + ack);
 
                                         // check if we have received an ACK for the correct packet
                                         if (p.getSequenceNumber() == ack.getSequenceNumber() && ack.getType() == 1) {
-                                            System.out.println("Received ACK from client: " + ack);
+                                            if (verbose) System.out.println("Received ACK from client: " + ack);
                                             break;
                                         }
                                     }
