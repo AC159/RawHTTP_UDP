@@ -242,12 +242,15 @@ public class UDPServer {
             Packet fin = new Packet(4, lastSequenceNum, peerAddress.getAddress(), peerAddress.getPort(), new byte[0]);
             channel.send(fin.toBufferArray(), routerAddress);
 
+            int count = 0;
             while(true) {
                 selector.select(TIMEOUT);
                 Set<SelectionKey> keys = selector.selectedKeys();
                 if (keys.isEmpty()) {
                     if (verbose) System.out.println("Timeout on FIN packet, sending FIN again...");
                     channel.send(fin.toBufferArray(), routerAddress);
+                    if (count >= 3) break;
+                    else count++;
                 } else {
                     // we have received a response
                     channel.receive(buffer);
